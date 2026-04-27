@@ -29,8 +29,8 @@ void MonitorService::setName(uint8_t id, String newName) {
 }
 
 void MonitorService::check() {
-  // Ми залишаємо функцію check порожньою (або для сирени в майбутньому), 
-  // бо тепер тривоги оброблятиме Python!
+  // Поки залишаємо порожнім. Плата більше не відправляє тривоги сама, 
+  // це тепер робить Python-бот, коли опитує плату.
 }
 
 String MonitorService::getFullStatus() {
@@ -41,7 +41,6 @@ String MonitorService::getFullStatus() {
   return status;
 }
 
-// НОВИЙ МЕТОД ДЛЯ PYTHON-БОТА
 String MonitorService::getJsonStatus() {
   float t = _sensorSvc.getTemperature(0);
   
@@ -52,7 +51,7 @@ String MonitorService::getJsonStatus() {
   if (isnan(t)) {
     doc["temp"] = "error";
   } else {
-    doc["temp"] = round(t * 10.0) / 10.0; // Округлюємо до 1 знаку
+    doc["temp"] = round(t * 10.0) / 10.0; 
   }
   
   doc["min"] = _min[0];

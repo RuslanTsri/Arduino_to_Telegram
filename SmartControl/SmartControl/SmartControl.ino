@@ -1,135 +1,118 @@
+#include <WiFi.h>
 #include "Config.h" 
 #include "WifiService.h"
 #include "WifiController.h"
 #include "SensorService.h" 
 #include "MonitorService.h"
-
 #include "StorageService.h"
+#include "MqttService.h" 
 
 // 1. Ініціалізація сервісів
 WifiService wifi(WIFI_SSID, WIFI_USER, WIFI_PASS);
 WifiController wifiCtrl;
 SensorService sensor; 
-WebServerService webServer(monitor);
 StorageService storage;
-MonitorService monitor(sensor, tgBot, storage); 
+MonitorService monitor(sensor, storage); 
+MqttService mqtt(monitor); 
 
 // 2. Таймери та стан
 bool isSensorReady = false;
-unsigned long lastMonitorCheck = 0; 
-unsigned long lastTgPoll = 0; 
-const int POLL_INTERVAL = 5000;
-unsigned long pollOffset = (DEVICE_ID - 1) * 800; 
+unsigned long lastMeasureTime = 0; 
+bool isAlarmActive = false; // Прапорець, щоб не спамити алярмами
 
 void setup() {
   Serial.begin(115200);
+  Serial.setDebugOutput(true); 
+  delay(1000); 
+
+  Serial.println("\n\n====================================");
+  Serial.println("🚀 СТАРТ ПРОГРАМИ (MQTT Enterprise Edition)!");
+  Serial.println("====================================\n");
+
+  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info){
+      if(event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+          Serial.printf("\n🛑 [WIFI] Відключено! Причина: %d\n", info.wifi_sta_disconnected.reason);
+      }
+  });
+
   pinMode(STATUS_LED, OUTPUT);
 
   isSensorReady = sensor.begin();
+  storage.begin(); 
   monitor.begin();
+  mqtt.begin(); 
   wifi.connect();
-
-  if (wifi.isConnected()) {
-    delay(pollOffset);
-    webServer.begin();
-  }
 }
 
 void loop() {
   wifi.maintain();
 
   if (wifi.isConnected()) {
-    webServer.handleClient(); 
+    mqtt.maintain(); 
   }
 
-  // --- АВТОМАТИЧНИЙ МОНІТОРИНГ ЛІНІЇ ---
-  if (isSensorReady && millis() - lastMonitorCheck > 5000) {
-    monitor.check();
-    lastMonitorCheck = millis();
-  }
+  // --- ЛОГІКА МОНІТОРИНГУ: ВИМІРЮВАННЯ ЩОСЕКУНДИ ---
+  if (isSensorReady && millis() - lastMeasureTime > 1000) {
+    lastMeasureTime = millis();
+    monitor.check(); 
+    
+    float currentTemp = sensor.getTemperature(0);
+    
+    // Використовуємо ТВОЇ назви функцій з StorageService
+    float tMax = storage.loadTempMax(0, DEFAULT_TEMP_MAX);
+    float tMin = storage.loadTempMin(0, DEFAULT_TEMP_MIN);
+    String devName = storage.loadName(0, DEVICE_LABEL);
 
-  // --- РОЗУМНЕ ОПИТУВАННЯ ТЕЛЕГРАМ ---
-  if (wifi.isConnected() && (millis() % POLL_INTERVAL) > pollOffset && (millis() % POLL_INTERVAL) < (pollOffset + 600)) {
-    if (millis() - lastTgPoll > 1000) {
-      String incomingCmd = tgBot.getUpdates();
-      if (incomingCmd != "") {
-        handleTelegramCommand(incomingCmd);
+    // ПЕРЕВІРКА НА МЕЖІ + ALARM_THRESHOLD (який ми додали в Config.h)
+    bool isTooHot = currentTemp > (tMax + ALARM_THRESHOLD);
+    bool isTooCold = currentTemp < (tMin - ALARM_THRESHOLD);
+
+    if (isTooHot || isTooCold) {
+      if (!isAlarmActive) {
+        String msg = "🚨 КРИТИЧНИЙ АЛЯРМ! [" + devName + "]\n";
+        msg += isTooHot ? "🔥 ПЕРЕГРІВ: " : "❄️ ОХОЛОДЖЕННЯ: ";
+        msg += String(currentTemp, 1) + "°C\n";
+        msg += "(Ліміт: " + String(isTooHot ? tMax : tMin, 0) + "°C + поріг " + String(ALARM_THRESHOLD, 0) + "°C)";
+        
+        mqtt.publishAlarm(msg); 
+        isAlarmActive = true; 
+        Serial.println("[MQTT] Алярм відправлено!");
       }
-      lastTgPoll = millis();
+    } 
+    else if (currentTemp <= tMax && currentTemp >= tMin) {
+      if (isAlarmActive) {
+        String msg = "✅ СТАН СТАБІЛІЗОВАНО [" + devName + "]\nТемпература в нормі: " + String(currentTemp, 1) + "°C";
+        mqtt.publishAlarm(msg);
+        isAlarmActive = false;
+        Serial.println("[MQTT] Об'єкт в нормі.");
+      }
     }
   }
-
-  // --- ІНДИКАЦІЯ СТАТУСУ ---
+  // Світлодіод: горить стабільно якщо є MQTT, мигає якщо тільки WiFi
   digitalWrite(STATUS_LED, wifi.isConnected() ? HIGH : (millis() / 500) % 2);
 
-  // --- ОБРОБКА КОМАНД З КОНСОЛІ (SERIAL) ---
-  if (Serial.available() > 0) {
+  // --- ОБРОБКА КОМАНД З SERIAL (для локального дебагу) ---
+ if (Serial.available() > 0) {
     String serialCmd = Serial.readStringUntil('\n');
     serialCmd.trim();
 
     if (serialCmd == "status") {
       Serial.println(monitor.getFullStatus());
     } 
-    else if (serialCmd == "temp") {
-      Serial.printf("Поточна температура: %.1f °C\n", sensor.getTemperature(0));
-    }
-    else if (serialCmd == "diag") {
-      wifiCtrl.printDiagnostics();
-    }
-    // Локальне налаштування через кабель
     else if (serialCmd.startsWith("setmax ")) {
       float val = serialCmd.substring(7).toFloat();
-      monitor.setMax(0, val);
-      Serial.printf("✅ ПОРІГ MAX ОНОВЛЕНО: %.1f (Збережено)\n", val);
+      storage.saveTempMax(0, val); // Твій метод збереження
+      Serial.printf("✅ MAX збережено: %.1f\n", val);
     }
     else if (serialCmd.startsWith("setmin ")) {
       float val = serialCmd.substring(7).toFloat();
-      monitor.setMin(0, val);
-      Serial.printf("✅ ПОРІГ MIN ОНОВЛЕНО: %.1f (Збережено)\n", val);
+      storage.saveTempMin(0, val); // Твій метод збереження
+      Serial.printf("✅ MIN збережено: %.1f\n", val);
     }
     else if (serialCmd.startsWith("setname ")) {
       String newName = serialCmd.substring(8);
-      monitor.setName(0, newName);
-      Serial.printf("✅ НАЗВУ ЗМІНЕНО: %s (Збережено)\n", newName.c_str());
+      storage.saveName(0, newName); // Твій метод збереження
+      Serial.printf("✅ NAME збережено: %s\n", newName.c_str());
     }
-  }
-}
-
-// --- ЦЕНТРАЛЬНИЙ ОБРОБНИК ТЕЛЕГРАМ-КОМАНД ---
-void handleTelegramCommand(String cmd) {
-  String id = String(DEVICE_ID);
-
-  // 1. ЗАГАЛЬНІ КОМАНДИ
-  if (cmd == "/status") {
-    delay((DEVICE_ID - 1) * 700);
-    tgBot.sendMessage(monitor.getFullStatus());
-  } 
-  else if (cmd == "/diag") {
-    delay((DEVICE_ID - 1) * 700);
-    String d = "📶 Діагностика [" + id + "]\n";
-    d += "Сигнал: " + String(wifiCtrl.getSignalStrength()) + " dBm\n";
-    d += "IP: " + WiFi.localIP().toString();
-    tgBot.sendMessage(d);
-  }
-
-  // 2. ПЕРСОНАЛЬНІ КОМАНДИ (наприклад: /setmax1 80)
-  if (cmd.startsWith("/setmax" + id)) {
-    float val = cmd.substring(8).toFloat(); // витягуємо число після /setmax1
-    monitor.setMax(0, val);
-    tgBot.sendMessage("✅ [" + id + "] Max поріг змінено на " + String(val));
-  }
-  else if (cmd.startsWith("/setmin" + id)) {
-    float val = cmd.substring(8).toFloat();
-    monitor.setMin(0, val);
-    tgBot.sendMessage("✅ [" + id + "] Min поріг змінено на " + String(val));
-  }
-  else if (cmd.startsWith("/setname" + id)) {
-    String newName = cmd.substring(9); // витягуємо текст після /setname1
-    monitor.setName(0, newName);
-    tgBot.sendMessage("✅ [" + id + "] Нова назва: " + newName);
-  }
-  else if (cmd == "/ping" + id) {
-    bool ok = wifiCtrl.pingHost("8.8.8.8");
-    tgBot.sendMessage("🌐 [" + id + "] Зв'язок: " + (ok ? "OK" : "FAILED"));
   }
 }

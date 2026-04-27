@@ -3,27 +3,27 @@
 
 #include <Arduino.h>
 #include "SensorService.h"
-#include "TgBotService.h"
 #include "StorageService.h"
 
 class MonitorService {
   public:
-    MonitorService(SensorService& sensorSvc, TgBotService& tgSvc, StorageService& storageSvc);
+    // ВАЖЛИВО: У конструкторі більше немає TgBotService
+    MonitorService(SensorService& sensorSvc, StorageService& storageSvc);
     
     void begin();
     void check(); 
     String getFullStatus(); 
+    String getJsonStatus(); // НОВИЙ МЕТОД ДЛЯ ВЕБ-СЕРВЕРА
+    
     void setMax(uint8_t id, float value);
     void setMin(uint8_t id, float value);
-    // ПЕРЕВІР, ЩО ЦЕЙ РЯДОК Є:
     void setName(uint8_t id, String newName);
 
   private:
     SensorService& _sensorSvc;
-    TgBotService& _tgSvc;
-    StorageService& _storage;
+    StorageService& _storage; // Змінної _tgSvc більше немає!
 
-    String _names[1]; // Тепер у нас 1 датчик на плату
+    String _names[1]; 
     float _min[1];
     float _max[1];
     uint8_t _alarmState[1]; 

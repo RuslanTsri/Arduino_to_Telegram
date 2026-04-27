@@ -21,11 +21,14 @@ void WebServerService::handleClient() {
 }
 
 void WebServerService::handleStatus() {
-  // Віддаємо Python-боту красивий JSON з усіма даними
+  // Додаємо заголовок CORS для доступу з браузера
+  _server.sendHeader("Access-Control-Allow-Origin", "*"); 
+  // Віддаємо Python-боту JSON з усіма даними
   _server.send(200, "application/json", _monitor.getJsonStatus());
 }
 
 void WebServerService::handleSetMax() {
+  _server.sendHeader("Access-Control-Allow-Origin", "*");
   if (_server.hasArg("val")) {
     float val = _server.arg("val").toFloat();
     _monitor.setMax(0, val);
@@ -36,6 +39,7 @@ void WebServerService::handleSetMax() {
 }
 
 void WebServerService::handleSetMin() {
+  _server.sendHeader("Access-Control-Allow-Origin", "*");
   if (_server.hasArg("val")) {
     float val = _server.arg("val").toFloat();
     _monitor.setMin(0, val);
@@ -46,6 +50,7 @@ void WebServerService::handleSetMin() {
 }
 
 void WebServerService::handleSetName() {
+  _server.sendHeader("Access-Control-Allow-Origin", "*");
   if (_server.hasArg("val")) {
     String newName = _server.arg("val");
     _monitor.setName(0, newName);

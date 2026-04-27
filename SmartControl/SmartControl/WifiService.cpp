@@ -1,86 +1,86 @@
 #include "WifiService.h"
 #include <Arduino.h>
-#include "esp_eap_client.h" // Потрібно для Enterprise мереж (універ)
+#include "esp_eap_client.h" 
+#include <esp_wifi.h>
 
 WifiService::WifiService(const char* ssid, const char* user, const char* pass) 
   : _ssid(ssid), _user(user), _pass(pass), _offlineStartTime(0) {}
 
 void WifiService::connect() {
-  Serial.print("\n=== WiFi Connection Start ===\n");
-  Serial.print("Target SSID: '"); Serial.print(_ssid); Serial.println("'");
+  Serial.println("\n[WiFi] Спроба прориву через Enterprise...");
 
-  // 1. Жорстке скидання
   WiFi.disconnect(true, true);
-  delay(100);
+  delay(200);
   WiFi.mode(WIFI_STA);
-  
-  // ВМИКАЄМО АПАРАТНЕ АВТО-ПЕРЕПІДКЛЮЧЕННЯ
-  WiFi.setAutoReconnect(true); 
-  delay(100);
 
-  // 2. Універсальна логіка підключення
+  // Маскування під iPhone залишаємо - це допомагає пройти фільтри заліза
+  WiFi.setHostname("iPhone-Ruslan");
+  uint8_t fakeMac[] = {0x48, 0x74, 0x6E, 0x11, 0x22, 0x33}; 
+  esp_wifi_set_mac(WIFI_IF_STA, &fakeMac[0]);
+
   if (strlen(_user) > 0) {
-    Serial.println("Mode: WPA2 Enterprise");
+    // Очищення старих даних авторизації
+    esp_eap_client_set_identity(NULL, 0); 
+    
+    // Встановлюємо Identity та Username (для ZSTU часто мають бути однакові)
     esp_eap_client_set_identity((uint8_t *)_user, strlen(_user));
     esp_eap_client_set_username((uint8_t *)_user, strlen(_user));
     esp_eap_client_set_password((uint8_t *)_pass, strlen(_pass));
+
+    // ХАК: Примусове відключення перевірки сертифіката сервера
+    // Ми кажемо, що CA cert порожній, але метод фази 2 - MSCHAPV2
+    esp_eap_client_set_ca_cert(NULL, 0);
+    esp_eap_client_set_ttls_phase2_method(ESP_EAP_TTLS_PHASE2_MSCHAPV2);
+
     esp_wifi_sta_enterprise_enable();
     WiFi.begin(_ssid);
-  } else if (strlen(_pass) > 0) {
-    Serial.println("Mode: WPA2 Personal");
+  } else {
     WiFi.begin(_ssid, _pass);
-  } else {
-    Serial.println("Mode: Open Network");
-    WiFi.begin(_ssid);
   }
 
-  // 3. Чекаємо першого підключення (15 секунд)
-  int max_attempts = 30;
-  int attempt = 0;
-  while (WiFi.status() != WL_CONNECTED && attempt < max_attempts) {
-    delay(500); Serial.print(".");
-    attempt++;
+  int numberOfTries = 50; 
+  while (WiFi.status() != WL_CONNECTED && numberOfTries > 0) {
+    delay(500);
+    Serial.print(".");
+    numberOfTries--;
   }
-  Serial.println("");
 
-  // 4. Перевірка результату
   if (isConnected()) {
-    Serial.println(">>> SUCCESS! <<<");
-    Serial.print("IP: "); Serial.println(WiFi.localIP());
-    _offlineStartTime = 0; // Скидаємо таймер ЧП
+    Serial.println("\n[WiFi] ПЕРЕМОГА! Підключено до ztu.edu.ua");
+    Serial.print("[WiFi] IP: "); Serial.println(WiFi.localIP());
   } else {
-    Serial.println(">>> FAILED! Will auto-retry in background. <<<");
+    Serial.println("\n[WiFi] Навіть хак не допоміг. Перевір логін/пароль.");
   }
-  Serial.println("=============================\n");
 }
 
+void WifiService::disconnect() {
+  Serial.println("[WiFi] Disconnecting from WiFi!");
+  if (WiFi.disconnect(true, false)) {
+    Serial.println("[WiFi] Disconnected successfully!");
+  }
+}
 bool WifiService::isConnected() {
   return WiFi.status() == WL_CONNECTED;
 }
 
 void WifiService::maintain() {
-  // Якщо є мережа
   if (isConnected()) {
     if (_offlineStartTime != 0) {
-        Serial.println("WiFi Restored Automatically!");
-        _offlineStartTime = 0; // Скидаємо таймер
+        Serial.println("[WiFi] Connection Restored Automatically!");
+        _offlineStartTime = 0; 
     }
-    return; // Виходимо, бо все ок
+    return; 
   }
 
-  // --- ЛОГІКА ДІЙ ПРИ ЧП (Немає мережі) ---
-
-  // Щойно втратили інтернет - засікаємо час
   if (_offlineStartTime == 0) {
     _offlineStartTime = millis(); 
-    Serial.println("WARNING: WiFi lost! Waiting for auto-reconnect...");
+    Serial.println("[WiFi] WARNING: Connection lost! Waiting for auto-reconnect...");
   }
 
-  // Якщо мережі немає 3 хвилини (180 000 мс)
-  if (millis() - _offlineStartTime > 180000) {
-    Serial.println("CRITICAL ERROR: WiFi offline for 3 mins.");
-    Serial.println("Rebooting ESP32 to prevent hardware freeze...");
+  // Якщо немає мережі 1 хвилину - рестарт
+  if (millis() - _offlineStartTime > 60000) {
+    Serial.println("[WiFi] CRITICAL ERROR: Offline for 1 mins. Rebooting...");
     delay(1000);
-    ESP.restart(); // Жорстке перезавантаження мікроконтролера
+    ESP.restart(); 
   }
 }

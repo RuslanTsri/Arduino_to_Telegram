@@ -7,10 +7,9 @@ int WifiController::getSignalStrength() {
 
 bool WifiController::pingHost(const char* host, uint16_t port) {
     WiFiClient client;
-    Serial.print("Pinging ");
+    Serial.print("[Diag] Pinging ");
     Serial.print(host);
     
-    // Намагаємося встановити TCP-з'єднання (таймаут 1 сек)
     if (client.connect(host, port)) {
         client.stop();
         Serial.println(" -> SUCCESS");
@@ -20,25 +19,21 @@ bool WifiController::pingHost(const char* host, uint16_t port) {
     return false;
 }
 
-void WifiController::disconnect() {
-    Serial.println("Disconnecting WiFi...");
-    WiFi.disconnect();
-}
-
 void WifiController::connectToLast() {
-    Serial.println("Attempting to connect to last known network...");
-    WiFi.begin(); // Без аргументів - бере з пам'яті
+    Serial.println("[Diag] Attempting to connect to last known network...");
+    WiFi.begin(); 
 }
 
 void WifiController::printDiagnostics() {
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("--- WiFi Diagnostics ---");
+        Serial.println("\n--- WiFi Diagnostics ---");
         Serial.print("SSID: "); Serial.println(WiFi.SSID());
         Serial.print("IP: "); Serial.println(WiFi.localIP());
         Serial.print("RSSI: "); Serial.print(getSignalStrength()); Serial.println(" dBm");
         Serial.print("Gateway: "); Serial.println(WiFi.gatewayIP());
-        Serial.println("------------------------");
+        Serial.print("MAC: "); Serial.println(WiFi.macAddress());
+        Serial.println("------------------------\n");
     } else {
-        Serial.println("WiFi not connected. Diagnostics unavailable.");
+        Serial.println("[Diag] WiFi not connected. Diagnostics unavailable.");
     }
 }
