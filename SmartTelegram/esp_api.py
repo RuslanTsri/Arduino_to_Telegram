@@ -64,7 +64,6 @@ def on_message(client, userdata, msg):
                         main_loop
                     )
 
-
 client.on_connect = on_connect
 client.on_message = on_message
 
