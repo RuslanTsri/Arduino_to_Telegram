@@ -6,6 +6,7 @@
 #include "MonitorService.h"
 #include "StorageService.h"
 #include "MqttService.h" 
+#include "TelegramService.h"
 
 // 1. Ініціалізація сервісів
 WifiService wifi(WIFI_SSID, WIFI_USER, WIFI_PASS);
@@ -22,6 +23,9 @@ bool isAlarmActive = false; // Прапорець, щоб не спамити а
 
 void setup() {
   Serial.begin(115200);
+
+Serial.println("\n[Час синхронізовано]");
+  telegram.begin(true);
   Serial.setDebugOutput(true); 
   delay(1000); 
 
@@ -50,7 +54,7 @@ void loop() {
   if (wifi.isConnected()) {
     mqtt.maintain(); 
   }
-
+  telegram.loop();
   // --- ЛОГІКА МОНІТОРИНГУ: ВИМІРЮВАННЯ ЩОСЕКУНДИ ---
   if (isSensorReady && millis() - lastMeasureTime > 1000) {
     lastMeasureTime = millis();

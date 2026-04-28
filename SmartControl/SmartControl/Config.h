@@ -21,10 +21,12 @@
 #define BOT_TOKEN SECRET_BOT_TOKEN
 #define CHAT_ID   SECRET_CHAT_ID
 
+
 // --- ДЕФОЛТНІ ПОРОГИ ---
 #define DEFAULT_TEMP_MIN 50.0
 #define DEFAULT_TEMP_MAX 85.0
 #define ALARM_THRESHOLD 2.0
+#define TOTAL_ZONES 3
 
 // =======================================================
 // --- НАЛАШТУВАННЯ ХМАРИ (MQTT) ---

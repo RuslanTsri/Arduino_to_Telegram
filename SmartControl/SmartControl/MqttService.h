@@ -12,6 +12,7 @@ class MqttService {
     void maintain();
     void publishStatus(const String& payload);
     void publishAlarm(const String& message);
+    void publishCommand(const String& topic, const String& cmd);
 
   private:
     WiFiClient _espClient;
@@ -22,5 +23,6 @@ class MqttService {
     void reconnect();
     static void callback(char* topic, byte* payload, unsigned int length);
 };
-void publishAlarm(const String& message);
+
+
 #endif
